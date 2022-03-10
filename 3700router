@@ -58,32 +58,21 @@ class Router:
             self.ports[neighbor] = int(port)
             self.relations[neighbor] = relation
             self.send(neighbor, json.dumps({ "type": "handshake", "src": self.our_addr(neighbor), "dst": neighbor, "msg": {}  }))
+            
+
+          
 
   def send(self, network, message):
         self.sockets[network].sendto(message.encode('utf-8'), ('localhost', self.ports[network]))
 
-  def run(self):
-        while True:
-            socks = select.select(self.sockets.values(), [], [], 0.1)[0]
-            for conn in socks:
-                k, addr = conn.recvfrom(65535)
-                srcif = None
-                for sock in self.sockets:
-                    if self.sockets[sock] == conn:
-                        srcif = sock
-                        break
-                msg = k.decode('utf-8')
 
-                print("Received message '%s' from %s" % (msg, srcif))
-        return
 
   def our_addr(self, dst):
         quads = list(int(qdn) for qdn in dst.split('.'))
         quads[3] = 1
         return "%d.%d.%d.%d" % (quads[0], quads[1], quads[2], quads[3])
 
-  def send(self, network, message):
-        self.sockets[network].sendto(message.encode('utf-8'), ('localhost', self.ports[network]))
+  
   def similar_network(self, n1, n2):
     n1_split = n1.split('.')
     n2_split = n2.split('.')
@@ -222,20 +211,20 @@ class Router:
         peer = routes[0]
     else:
         print("ERROR MORE THAN 1 ROUTE", routes) 
-    return self.sockets[peer] if peer else None
+    return peer if peer else None 
 
   def forward(self, srcif, packet):
     """ Forward a data packet """
     route = self.get_route(srcif, packet[DEST])
     if route:
-        route.sendall(json.dumps(packet).encode())
+        self.send(route ,json.dumps(packet))
         return True
     else:
         packet[TYPE] =  "no route"
         packet[MESG] = {}
         packet[DEST] = packet[SRCE]
         packet[SRCE] = ('.').join(srcif.split('.', 3)[:3]) + '.1'
-        self.sockets[srcif].sendall(json.dumps(packet).encode())
+        self.send(srcif, json.dumps(packet))
         return False
 
   def adjacent_neighbor(self, entry_net, update_net):
@@ -323,13 +312,9 @@ class Router:
       dest_relationship = self.relations[socket]
       if src_relationship == CUST:
         if(socket != srcif):
-          
-          print("Updated socket: ",socket)
-          print("Updated newSource: ", newSource)
-          print("Updated newPacket",newPacket)
-          self.sockets[socket].sendall(json.dumps(newPacket).encode())
+          self.send(socket, json.dumps(newPacket))
       elif dest_relationship == CUST:
-        self.sockets[socket].sendto(json.dumps(newPacket).encode())
+        self.send(socket, json.dumps(newPacket))
     return True
 
   def updateTable(self, packet):
@@ -388,7 +373,7 @@ class Router:
             newSource = ('.').join(socket.split('.', 3)[:3]) + '.1'
             newPacket[SRCE] = newSource
             newPacket[DEST] = socket
-            self.sockets[socket].sendall(json.dumps(newPacket).encode())
+            self.send(socket, json.dumps(newPacket))
     elif relationToMessageSender == PEER or relationToMessageSender == PROV:
       # send to all customers
       for socket in self.sockets:
@@ -397,7 +382,7 @@ class Router:
             newSource = ('.').join(socket.split('.', 3)[:3]) + '.1'
             newPacket[SRCE] = newSource
             newPacket[DEST] = socket
-            self.sockets[socket].sendall(json.dumps(newPacket).encode())
+            self.send(socket, json.dumps(newPacket))
     return True
 
   def dump(self, packet):
@@ -407,7 +392,7 @@ class Router:
     response[DEST] = packet[SRCE]
     response[TYPE] = TABL
     response[MESG] = self.ftab
-    self.sockets[packet[SRCE]].sendall(json.dumps(response).encode())
+    self.send(packet[SRCE], json.dumps(response))
     return True
   
   def handle_packet(self, srcif, packet):
